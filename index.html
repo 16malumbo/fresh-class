@@ -25,6 +25,7 @@
         th { background-color: var(--primary); color: white; }
         #loading { text-align: center; color: #777; padding: 50px; }
         .section-title { color: var(--primary); border-left: 5px solid var(--accent); padding-left: 10px; margin-top: 40px; }
+        hr { border: 0; border-top: 1px solid #d1f2eb; margin: 20px 0; }
     </style>
 </head>
 <body>
@@ -42,21 +43,30 @@
 
     <div id="admin-panel">
         <h3>Admin Actions</h3>
+        <p><strong>Add Contribution (Income)</strong></p>
         <div class="form-group">
             <input type="text" id="in-name" placeholder="Member Name">
             <input type="number" id="in-amount" placeholder="Amount (K)">
             <input type="date" id="in-date">
-            <button class="add-btn" id="addInBtn">Add Record</button>
+            <button class="add-btn" id="addInBtn">Add Income</button>
+        </div>
+        <hr>
+        <p><strong>Record Money Used (Expense)</strong></p>
+        <div class="form-group">
+            <input type="text" id="out-purpose" placeholder="Spent on (e.g. Funeral)">
+            <input type="number" id="out-amount" placeholder="Amount (K)">
+            <input type="date" id="out-date">
+            <button class="add-btn" id="addOutBtn" style="background-color: var(--danger);">Add Expense</button>
         </div>
     </div>
 
     <div id="loading">Connecting to database...</div>
 
     <div id="content" style="display:none;">
-        <h2 class="section-title">Contribution Records</h2>
+        <h2 class="section-title">Transaction History</h2>
         <table>
-            <thead><tr><th>Date</th><th>Name</th><th>Amount</th><th id="act-col" style="display:none;">Action</th></tr></thead>
-            <tbody id="in-body"></tbody>
+            <thead><tr><th>Date</th><th>Description</th><th>Amount</th><th id="act-col" style="display:none;">Action</th></tr></thead>
+            <tbody id="table-body"></tbody>
         </table>
     </div>
 </div>
@@ -78,17 +88,31 @@
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
     const inRef = ref(db, 'contributions');
+    const outRef = ref(db, 'expenditures'); // Reference for money used
 
     let income = [];
+    let expenses = [];
     let isAdmin = false;
 
+    // Listen for contributions
     onValue(inRef, (snap) => {
         const data = snap.val();
         income = data ? Object.keys(data).map(k => ({id: k, ...data[k]})) : [];
+        updateDisplay();
+    });
+
+    // Listen for expenditures
+    onValue(outRef, (snap) => {
+        const data = snap.val();
+        expenses = data ? Object.keys(data).map(k => ({id: k, ...data[k]})) : [];
+        updateDisplay();
+    });
+
+    function updateDisplay() {
         document.getElementById('loading').style.display = 'none';
         document.getElementById('content').style.display = 'block';
         renderApp();
-    });
+    }
 
     document.getElementById('addInBtn').onclick = () => {
         const name = document.getElementById('in-name').value;
@@ -96,30 +120,55 @@
         const date = document.getElementById('in-date').value;
         if(name && amount && date) {
             push(inRef, {name, amount, date});
-            document.getElementById('in-name').value = '';
-            document.getElementById('in-amount').value = '';
+            clearFields(['in-name', 'in-amount', 'in-date']);
         }
     };
 
-    window.deleteItem = (id) => { if(confirm("Delete record?")) remove(ref(db, `contributions/${id}`)); };
+    document.getElementById('addOutBtn').onclick = () => {
+        const purpose = document.getElementById('out-purpose').value;
+        const amount = document.getElementById('out-amount').value;
+        const date = document.getElementById('out-date').value;
+        if(purpose && amount && date) {
+            push(outRef, {purpose, amount, date});
+            clearFields(['out-purpose', 'out-amount', 'out-date']);
+        }
+    };
+
+    function clearFields(ids) { ids.forEach(id => document.getElementById(id).value = ''); }
+
+    window.deleteItem = (id, path) => { if(confirm("Delete record?")) remove(ref(db, `${path}/${id}`)); };
 
     function renderApp() {
-        const inBody = document.getElementById('in-body');
+        const tableBody = document.getElementById('table-body');
         let totalIn = 0;
-        inBody.innerHTML = '';
+        let totalOut = 0;
+        tableBody.innerHTML = '';
         document.getElementById('act-col').style.display = isAdmin ? 'table-cell' : 'none';
 
-        income.sort((a,b) => new Date(b.date) - new Date(a.date)).forEach(item => {
+        // Process Income
+        income.forEach(item => {
             totalIn += parseFloat(item.amount);
-            inBody.innerHTML += `<tr>
+            tableBody.innerHTML += `<tr>
                 <td>${item.date}</td>
-                <td>${item.name}</td>
-                <td>K${parseFloat(item.amount).toLocaleString()}</td>
-                ${isAdmin ? `<td><button class="delete-btn" onclick="deleteItem('${item.id}')">Del</button></td>` : ''}
+                <td>${item.name} (Contribution)</td>
+                <td style="color: var(--accent)">+K${parseFloat(item.amount).toLocaleString()}</td>
+                ${isAdmin ? `<td><button class="delete-btn" onclick="deleteItem('${item.id}', 'contributions')">Del</button></td>` : ''}
             </tr>`;
         });
+
+        // Process Expenses
+        expenses.forEach(item => {
+            totalOut += parseFloat(item.amount);
+            tableBody.innerHTML += `<tr>
+                <td>${item.date}</td>
+                <td>${item.purpose} (Expenditure)</td>
+                <td style="color: var(--danger)">-K${parseFloat(item.amount).toLocaleString()}</td>
+                ${isAdmin ? `<td><button class="delete-btn" onclick="deleteItem('${item.id}', 'expenditures')">Del</button></td>` : ''}
+            </tr>`;
+        });
+
         document.getElementById('grand-total').textContent = "K" + totalIn.toLocaleString();
-        document.getElementById('balance-total').textContent = "K" + totalIn.toLocaleString();
+        document.getElementById('balance-total').textContent = "K" + (totalIn - totalOut).toLocaleString();
     }
 
     document.getElementById('adminBtn').onclick = () => {
