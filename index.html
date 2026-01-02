@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fresh Class Contributions</title>
+    <style>
+        :root { --primary: #2c3e50; --accent: #27ae60; --danger: #e74c3c; --info: #3498db; --light: #ecf0f1; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; margin: 0; padding: 20px; color: #333; }
+        .container { max-width: 1000px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+        header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid var(--light); padding-bottom: 20px; margin-bottom: 20px; }
+        h1 { margin: 0; color: var(--primary); font-size: 24px; }
+        .admin-btn { background-color: var(--primary); color: white; border: none; padding: 8px 15px; border-radius: 5px; cursor: pointer; }
+        .stats-container { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px; margin-bottom: 30px; }
+        .card { background: var(--light); padding: 15px; border-radius: 8px; text-align: center; }
+        .card h3 { margin: 0 0 10px 0; font-size: 14px; color: #7f8c8d; text-transform: uppercase; }
+        .card .amount { font-size: 22px; font-weight: bold; color: var(--accent); }
+        #admin-panel { display: none; background-color: #e8f8f5; padding: 20px; border: 1px solid #d1f2eb; border-radius: 8px; margin-bottom: 30px; }
+        .form-group { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 15px; }
+        input { padding: 10px; border: 1px solid #ccc; border-radius: 4px; flex: 1; min-width: 150px; }
+        button.add-btn { background-color: var(--accent); color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        .delete-btn { background-color: var(--danger); color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; margin-bottom: 30px; }
+        th, td { text-align: left; padding: 12px; border-bottom: 1px solid #eee; }
+        th { background-color: var(--primary); color: white; }
+        #loading { text-align: center; color: #777; padding: 50px; }
+        .section-title { color: var(--primary); border-left: 5px solid var(--accent); padding-left: 10px; margin-top: 40px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1>Fresh Class Contributions</h1>
+        <button class="admin-btn" id="adminBtn">Admin Login</button>
+    </header>
+
+    <div class="stats-container">
+        <div class="card"><h3>Total Collected</h3><div class="amount" id="grand-total">K0.00</div></div>
+        <div class="card"><h3>Current Balance</h3><div class="amount" id="balance-total" style="color:#3498db;">K0.00</div></div>
+    </div>
+
+    <div id="admin-panel">
+        <h3>Admin Actions</h3>
+        <div class="form-group">
+            <input type="text" id="in-name" placeholder="Member Name">
+            <input type="number" id="in-amount" placeholder="Amount (K)">
+            <input type="date" id="in-date">
+            <button class="add-btn" id="addInBtn">Add Record</button>
+        </div>
+    </div>
+
+    <div id="loading">Connecting to database...</div>
+
+    <div id="content" style="display:none;">
+        <h2 class="section-title">Contribution Records</h2>
+        <table>
+            <thead><tr><th>Date</th><th>Name</th><th>Amount</th><th id="act-col" style="display:none;">Action</th></tr></thead>
+            <tbody id="in-body"></tbody>
+        </table>
+    </div>
+</div>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
+    import { getDatabase, ref, push, onValue, remove } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js";
+
+    const firebaseConfig = {
+        apiKey: "AIzaSyDYcg0SJTzVVWK25r8cYLvM7Iw0_UGQfGI",
+        authDomain: "fresh-class-contributions.firebaseapp.com",
+        databaseURL: "https://fresh-class-contributions-default-rtdb.firebaseio.com",
+        projectId: "fresh-class-contributions",
+        storageBucket: "fresh-class-contributions.firebasestorage.app",
+        messagingSenderId: "576248146374",
+        appId: "1:576248146374:web:51fdb9b16e4bafdf142ac7"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+    const inRef = ref(db, 'contributions');
+
+    let income = [];
+    let isAdmin = false;
+
+    onValue(inRef, (snap) => {
+        const data = snap.val();
+        income = data ? Object.keys(data).map(k => ({id: k, ...data[k]})) : [];
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('content').style.display = 'block';
+        renderApp();
+    });
+
+    document.getElementById('addInBtn').onclick = () => {
+        const name = document.getElementById('in-name').value;
+        const amount = document.getElementById('in-amount').value;
+        const date = document.getElementById('in-date').value;
+        if(name && amount && date) {
+            push(inRef, {name, amount, date});
+            document.getElementById('in-name').value = '';
+            document.getElementById('in-amount').value = '';
+        }
+    };
+
+    window.deleteItem = (id) => { if(confirm("Delete record?")) remove(ref(db, `contributions/${id}`)); };
+
+    function renderApp() {
+        const inBody = document.getElementById('in-body');
+        let totalIn = 0;
+        inBody.innerHTML = '';
+        document.getElementById('act-col').style.display = isAdmin ? 'table-cell' : 'none';
+
+        income.sort((a,b) => new Date(b.date) - new Date(a.date)).forEach(item => {
+            totalIn += parseFloat(item.amount);
+            inBody.innerHTML += `<tr>
+                <td>${item.date}</td>
+                <td>${item.name}</td>
+                <td>K${parseFloat(item.amount).toLocaleString()}</td>
+                ${isAdmin ? `<td><button class="delete-btn" onclick="deleteItem('${item.id}')">Del</button></td>` : ''}
+            </tr>`;
+        });
+        document.getElementById('grand-total').textContent = "K" + totalIn.toLocaleString();
+        document.getElementById('balance-total').textContent = "K" + totalIn.toLocaleString();
+    }
+
+    document.getElementById('adminBtn').onclick = () => {
+        if(!isAdmin) {
+            if(prompt("Admin Password:") === "admin123") {
+                isAdmin = true;
+                document.getElementById('admin-panel').style.display = 'block';
+                document.getElementById('adminBtn').textContent = "Logout";
+                renderApp();
+            }
+        } else {
+            isAdmin = false;
+            document.getElementById('admin-panel').style.display = 'none';
+            document.getElementById('adminBtn').textContent = "Admin Login";
+            renderApp();
+        }
+    };
+</script>
+</body>
+</html>
